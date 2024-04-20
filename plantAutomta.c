@@ -11,8 +11,14 @@
 
 #define DHTPIN 29
 
-double* readGroundMoisture(){
-    double value = analogRead(MCP3004_BASE + AD_CHAN);
+double senseLightLevel(int mcp_base, int ad_channel){
+    double value = analogRead(mcp_base + ad_channel);
+    double light = value/1023*100;
+    return light;
+}
+
+double* senseGroundMoisture(int mcp_base, int ad_channel){
+    double value = analogRead(mcp_base + ad_channel);
     double* moisture = malloc(sizeof(int));
     *moisture = (1-value/1023)*100;
 
@@ -35,11 +41,14 @@ int main()
     
     for(int i = 0 ; i < 100 ; i++){
         delay(1000); //delay 2 sec for DHT "cooldown"
-        double* moisture = readGroundMoisture();
+        double* moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN);
         int* dht_data = readDHT(DHTPIN);
 
-        printf("Dirt Moisture:\t%.1f%%\n", *moisture); //im just gonna pull some numbers out my ass and say above 70% is the optimal watering level
+        printf("Dirt Moisture:\t%.2f%%\n", *moisture); //im just gonna pull some numbers out my ass and say above 70% is the optimal watering level
         printDHTData(dht_data);
+
+        double lightVal = senseLightLevel(MCP3004_BASE, 1);
+        printf("Light:\t\t%.2f%%\n", lightVal);
         
         printf("------------------------\n");
     }
