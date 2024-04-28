@@ -139,9 +139,9 @@ int main()
     mcp3004Setup(MCP3004_BASE, SPI_CHAN);
 
     int fd = wiringPiI2CSetup(I2C_ADDR);
-    // int flag = 0;
     int menu = 0;
     int powerSaveTimer = 0;
+    int powerSaveFlag = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
     lcd_init(fd);
 
@@ -166,14 +166,15 @@ int main()
             if (powerSaveTimer <= POWER_SAVE_TIME)
             {
                 displayPlantData(fd, myPlantData, menu);
+                powerSaveFlag = 0;
+                powerSaveTimer++;
             }
-            else
+            else if(!powerSaveFlag)
             {
                 ClrLcd(fd);
                 switchBacklight(fd, 0);
+                powerSaveFlag = 1;
             }
-
-            powerSaveTimer++;
         }
 
         if (digitalRead(BUTTON_PIN) == HIGH)
