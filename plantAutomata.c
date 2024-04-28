@@ -21,6 +21,8 @@
 
 #define BUTTON_PIN 28
 
+#define POWER_SAVE_TIME 5 // 5x2=10 seconds to power save mode
+
 typedef struct PlantData
 {
     int *dht_data;
@@ -60,57 +62,68 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
 {
     switch (menu)
     {
-        case 0: //Soil and Temperature
-            lcdLoc(fd, LINE1);
-            typeln(fd, "Soil: ");
-            typeFloat(fd, plantData->ground_moisture);
-            typeln(fd, "%");
-            if (plantData->dht_data != NULL)
-            {
-                lcdLoc(fd, LINE2);
-                typeln(fd, "TMP: ");
-                typeInt(fd, plantData->dht_data[2]);
-                typeln(fd, ".");
-                typeInt(fd, plantData->dht_data[3]);
-                typeln(fd, "%");
-            }
-            break;
-        case 1: //Temperature and Humidity
-            if (plantData->dht_data != NULL)
-            {
-                lcdLoc(fd, LINE1);
-                typeln(fd, "TMP: ");
-                typeInt(fd, plantData->dht_data[2]);
-                typeln(fd, ".");
-                typeInt(fd, plantData->dht_data[3]);
-                typeln(fd, "%");
-
-                lcdLoc(fd, LINE2);
-                typeln(fd, "HMT: ");
-                typeInt(fd, plantData->dht_data[0]);
-                typeln(fd, ".");
-                typeInt(fd, plantData->dht_data[1]);
-                typeln(fd, "%");
-            }
-            break;
-        case 2: //Humidity and light
-            if (plantData->dht_data != NULL)
-            {
-                lcdLoc(fd, LINE1);
-                typeln(fd, "HMT: ");
-                typeInt(fd, plantData->dht_data[0]);
-                typeln(fd, ".");
-                typeInt(fd, plantData->dht_data[1]);
-                typeln(fd, "%");
-            }
+    case 0: // Soil and Temperature
+        lcdLoc(fd, LINE1);
+        typeln(fd, "Soil: ");
+        typeFloat(fd, plantData->ground_moisture);
+        typeln(fd, "%");
+        if (plantData->dht_data != NULL)
+        {
             lcdLoc(fd, LINE2);
-            typeln(fd, "Light: ");
-            typeFloat(fd, plantData->light_level);
+            typeln(fd, "TMP: ");
+            typeInt(fd, plantData->dht_data[2]);
+            typeln(fd, ".");
+            typeInt(fd, plantData->dht_data[3]);
             typeln(fd, "%");
-            break;
-        default:
-            printf("Uh Oh\n");
-            break;
+        }
+        break;
+    case 1: // Temperature and Humidity
+        if (plantData->dht_data != NULL)
+        {
+            lcdLoc(fd, LINE1);
+            typeln(fd, "TMP: ");
+            typeInt(fd, plantData->dht_data[2]);
+            typeln(fd, ".");
+            typeInt(fd, plantData->dht_data[3]);
+            typeln(fd, "%");
+
+            lcdLoc(fd, LINE2);
+            typeln(fd, "HMT: ");
+            typeInt(fd, plantData->dht_data[0]);
+            typeln(fd, ".");
+            typeInt(fd, plantData->dht_data[1]);
+            typeln(fd, "%");
+        }
+        break;
+    case 2: // Humidity and light
+        if (plantData->dht_data != NULL)
+        {
+            lcdLoc(fd, LINE1);
+            typeln(fd, "HMT: ");
+            typeInt(fd, plantData->dht_data[0]);
+            typeln(fd, ".");
+            typeInt(fd, plantData->dht_data[1]);
+            typeln(fd, "%");
+        }
+        lcdLoc(fd, LINE2);
+        typeln(fd, "Light: ");
+        typeFloat(fd, plantData->light_level);
+        typeln(fd, "%");
+        break;
+    case 3: // light and soil (full circle)
+        lcdLoc(fd, LINE1);
+        typeln(fd, "Light: ");
+        typeFloat(fd, plantData->light_level);
+        typeln(fd, "%");
+
+        lcdLoc(fd, LINE2);
+        typeln(fd, "Soil: ");
+        typeFloat(fd, plantData->ground_moisture);
+        typeln(fd, "%");
+        break;
+    default:
+        printf("Uh Oh\n");
+        break;
     }
 
     printDHTData(plantData->dht_data);
@@ -126,8 +139,9 @@ int main()
     mcp3004Setup(MCP3004_BASE, SPI_CHAN);
 
     int fd = wiringPiI2CSetup(I2C_ADDR);
-    int flag = 0;
+    // int flag = 0;
     int menu = 0;
+    int powerSaveTimer = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
     lcd_init(fd);
 
@@ -142,31 +156,40 @@ int main()
     ClrLcd(fd);
     while (1)
     {
+
         if (millis() % 2000 == 0)
         {
             myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN);
             myPlantData->dht_data = readDHT(DHTPIN);
             myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
 
-            displayPlantData(fd, myPlantData, menu);
+            if (powerSaveTimer <= POWER_SAVE_TIME)
+            {
+                displayPlantData(fd, myPlantData, menu);
+            }
+            else
+            {
+                ClrLcd(fd);
+                switchBacklight(fd, 0);
+            }
+
+            powerSaveTimer++;
         }
+
         if (digitalRead(BUTTON_PIN) == HIGH)
         {
-            if (!flag)
+
+            menu++;
+            if (menu > 3)
             {
-                menu++;
-                if(menu > 2){
-                    menu = 0;
-                }
-                ClrLcd(fd);
-                displayPlantData(fd, myPlantData, menu);
-                flag = 1;
-                delay(200);
+                menu = 0;
             }
-        }
-        else
-        {
-            flag = 0;
+            ClrLcd(fd);
+            displayPlantData(fd, myPlantData, menu);
+
+            powerSaveTimer = 0;
+            switchBacklight(fd, 1);
+            delay(200);
         }
     }
     return 0;
