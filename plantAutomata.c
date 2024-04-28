@@ -74,7 +74,7 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
             typeInt(fd, plantData->dht_data[2]);
             typeln(fd, ".");
             typeInt(fd, plantData->dht_data[3]);
-            typeln(fd, "%");
+            typeln(fd, "C");
         }
         break;
     case 1: // Temperature and Humidity
@@ -85,7 +85,7 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
             typeInt(fd, plantData->dht_data[2]);
             typeln(fd, ".");
             typeInt(fd, plantData->dht_data[3]);
-            typeln(fd, "%");
+            typeln(fd, "C");
 
             lcdLoc(fd, LINE2);
             typeln(fd, "HMT: ");
@@ -121,9 +121,6 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
         typeFloat(fd, plantData->ground_moisture);
         typeln(fd, "%");
         break;
-    default:
-        printf("Uh Oh\n");
-        break;
     }
 
     printDHTData(plantData->dht_data);
@@ -135,14 +132,14 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
 
 int main()
 {
-    wiringPiSetup();
-    mcp3004Setup(MCP3004_BASE, SPI_CHAN);
-
     int fd = wiringPiI2CSetup(I2C_ADDR);
     int menu = 0;
     int powerSaveTimer = 0;
     int powerSaveFlag = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
+
+    wiringPiSetup();
+    mcp3004Setup(MCP3004_BASE, SPI_CHAN);
     lcd_init(fd);
 
     pinMode(BUTTON_PIN, INPUT);
@@ -152,24 +149,24 @@ int main()
     lcdLoc(fd, LINE2);
     typeln(fd, "by: Maker");
 
-    delay(2500);
+    delay(1500);
     ClrLcd(fd);
     while (1)
     {
 
         if (millis() % 2000 == 0)
         {
-            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN);
+            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN); //get da data
             myPlantData->dht_data = readDHT(DHTPIN);
             myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
 
-            if (powerSaveTimer <= POWER_SAVE_TIME)
+            if (powerSaveTimer <= POWER_SAVE_TIME) //no need to display the data if its in power-save mode
             {
                 displayPlantData(fd, myPlantData, menu);
                 powerSaveFlag = 0;
                 powerSaveTimer++;
             }
-            else if(!powerSaveFlag)
+            else if(!powerSaveFlag) //if the powersave time-limit is reached clear lcd and turnr off the backlight
             {
                 ClrLcd(fd);
                 switchBacklight(fd, 0);
@@ -177,21 +174,22 @@ int main()
             }
         }
 
-        if (digitalRead(BUTTON_PIN) == HIGH)
+        if (digitalRead(BUTTON_PIN) == HIGH) //if button pushed
         {
-
-            menu++;
-            if (menu > 3)
-            {
-                menu = 0;
+            powerSaveTimer = 0; //reset powersave time
+            if(powerSaveFlag){ //if its already in power save mode, just switch on the light
+                switchBacklight(fd, 1);
+            }else{ //otherwise switch through menus
+                menu = (menu + 1) % 4; //loop from 0-3
             }
-            ClrLcd(fd);
-            displayPlantData(fd, myPlantData, menu);
 
-            powerSaveTimer = 0;
-            switchBacklight(fd, 1);
-            delay(200);
+            ClrLcd(fd); //clear lcd for next set of data
+            displayPlantData(fd, myPlantData, menu); //display next set of data
+
+            
+            delay(200); //delay to avoid button-bounce
         }
+
     }
     return 0;
 }
