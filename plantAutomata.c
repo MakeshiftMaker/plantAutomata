@@ -13,21 +13,21 @@
 #define AD_CHAN 0        // chan-0 on AD
 
 #define DHTPIN 29
+#define BUTTON_PIN 28
+#define PUMP_PIN 27
 
 // Define some device parameters
 #define I2C_ADDR 0x27 // I2C device address
-
 #define LINE1 0x80 // 1st line
 #define LINE2 0xC0 // 2nd line
 
-#define BUTTON_PIN 28
-
-#define POWER_SAVE_TIME 5 // 5x2=10 seconds to power save mode
+#define POWER_SAVE_TIME 10 // 10x2=20 seconds to power save mode
+#define WATER_COOLDOWN 10 // 1 in x times to water
 
 typedef struct PlantData
 {
     int *dht_data;
-    float ground_moisture;
+    float soil_moisture;
     float light_level;
 
 } PlantData;
@@ -39,7 +39,7 @@ float senseLightLevel(int mcp_base, int ad_channel)
     return light;
 }
 
-float senseGroundMoisture(int mcp_base, int ad_channel)
+float senseSoilMoisture(int mcp_base, int ad_channel)
 {
     float value = analogRead(mcp_base + ad_channel);
     float moisture = (1 - value / 1023) * 100;
@@ -66,7 +66,7 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
     case 0: // Soil and Temperature
         lcdLoc(fd, LINE1);
         typeln(fd, "Soil: ");
-        typeFloat(fd, plantData->ground_moisture);
+        typeFloat(fd, plantData->soil_moisture);
         typeln(fd, "%");
         if (plantData->dht_data != NULL)
         {
@@ -119,16 +119,25 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
 
         lcdLoc(fd, LINE2);
         typeln(fd, "Soil: ");
-        typeFloat(fd, plantData->ground_moisture);
+        typeFloat(fd, plantData->soil_moisture);
         typeln(fd, "%");
         break;
     }
 
+    
+    printf("Dirt Moisture:\t%.1f%%\n", plantData->soil_moisture); // im just gonna pull some numbers out my ass and say above 50% is the optimal watering level
     printDHTData(plantData->dht_data);
-    printf("Dirt Moisture:\t%.1f%%\n", plantData->ground_moisture); // im just gonna pull some numbers out my ass and say above 70% is the optimal watering level
     printf("Light:\t\t%.1f%%\n", plantData->light_level);
     printf("Menu: %d\n", menu);
     printf("------------------------\n");
+}
+
+void water(){
+    pinMode(PUMP_PIN, OUTPUT);
+    digitalWrite(PUMP_PIN, HIGH);
+    delay(1000);
+    digitalWrite(PUMP_PIN, LOW);
+    pinMode(PUMP_PIN, INPUT);
 }
 
 int main()
@@ -137,6 +146,7 @@ int main()
     int menu = 0;
     int powerSaveTimer = 0;
     int powerSaveFlag = 0;
+    int waterCounter = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
     FILE *dataFile = fopen("plantData.txt", "a");
     if(dataFile == NULL){
@@ -161,7 +171,7 @@ int main()
 
         if (millis() % 2000 == 0)
         {
-            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN); // get da data
+            myPlantData->soil_moisture = senseSoilMoisture(MCP3004_BASE, AD_CHAN); // get da data
             myPlantData->dht_data = readDHT(DHTPIN);
             myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
 
@@ -184,9 +194,20 @@ int main()
 
             if (myPlantData->dht_data != NULL)
             {
-                fprintf(dataFile, "%s %d.%d %f %f %d.%d \n", buffer, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->ground_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1]);
+                fprintf(dataFile, "%s %d.%d %f %f %d.%d \n", buffer, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->soil_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1]);
                 fflush(dataFile);
             }
+
+            if (myPlantData->soil_moisture < 50.00){
+                if(waterCounter == 9){
+                    ClrLcd(fd);
+                    lcdLoc(fd, LINE1);
+                    typeln(fd, "Watering...");
+                    water();
+                }
+                waterCounter = (waterCounter + 1) % WATER_COOLDOWN;
+            }
+            printf("%d\n", waterCounter);
         }
 
         if (digitalRead(BUTTON_PIN) == HIGH) // if button pushed
