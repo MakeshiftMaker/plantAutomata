@@ -6,6 +6,7 @@
 #include <string.h>
 #include "../DHT11/DHT11.h"
 #include "../i2c_lcd/i2c_lcd.h"
+#include <time.h>
 
 #define MCP3004_BASE 100 // virtuelle channel-vergabe für den AD-Wandler fängt bei 100 an zu zählen
 #define SPI_CHAN 0       // SPICE0: chip select gpio port
@@ -137,6 +138,10 @@ int main()
     int powerSaveTimer = 0;
     int powerSaveFlag = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
+    FILE *dataFile = fopen("plantData.txt", "a");
+    if(dataFile == NULL){
+        printf("Error opening file\n");
+    }
 
     wiringPiSetup();
     mcp3004Setup(MCP3004_BASE, SPI_CHAN);
@@ -156,40 +161,52 @@ int main()
 
         if (millis() % 2000 == 0)
         {
-            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN); //get da data
+            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN); // get da data
             myPlantData->dht_data = readDHT(DHTPIN);
             myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
 
-            if (powerSaveTimer <= POWER_SAVE_TIME) //no need to display the data if its in power-save mode
+            if (powerSaveTimer <= POWER_SAVE_TIME) // no need to display the data if its in power-save mode
             {
                 displayPlantData(fd, myPlantData, menu);
                 powerSaveFlag = 0;
                 powerSaveTimer++;
             }
-            else if(!powerSaveFlag) //if the powersave time-limit is reached clear lcd and turnr off the backlight
+            else if (!powerSaveFlag) // if the powersave time-limit is reached clear lcd and turnr off the backlight
             {
                 ClrLcd(fd);
                 switchBacklight(fd, 0);
                 powerSaveFlag = 1;
             }
+
+            time_t now = time(NULL);
+            char buffer[20]; // Buffer to hold the date/time string
+            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+            if (myPlantData->dht_data != NULL)
+            {
+                fprintf(dataFile, "%s %d.%d %f %f %d.%d \n", buffer, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->ground_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1]);
+                fflush(dataFile);
+            }
         }
 
-        if (digitalRead(BUTTON_PIN) == HIGH) //if button pushed
+        if (digitalRead(BUTTON_PIN) == HIGH) // if button pushed
         {
-            powerSaveTimer = 0; //reset powersave time
-            if(powerSaveFlag){ //if its already in power save mode, just switch on the light
+            powerSaveTimer = 0; // reset powersave time
+            if (powerSaveFlag)
+            { // if its already in power save mode, just switch on the light
                 switchBacklight(fd, 1);
-            }else{ //otherwise switch through menus
-                menu = (menu + 1) % 4; //loop from 0-3
+            }
+            else
+            {                          // otherwise switch through menus
+                menu = (menu + 1) % 4; // loop from 0-3
             }
 
-            ClrLcd(fd); //clear lcd for next set of data
-            displayPlantData(fd, myPlantData, menu); //display next set of data
+            ClrLcd(fd);                              // clear lcd for next set of data
+            displayPlantData(fd, myPlantData, menu); // display next set of data
 
-            
-            delay(200); //delay to avoid button-bounce
+            delay(200); // delay to avoid button-bounce
         }
-
     }
+
     return 0;
 }
