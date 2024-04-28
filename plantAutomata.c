@@ -56,31 +56,67 @@ void printDHTData(int *dht_data)
     }
 }
 
-void printPlantData(int fd, PlantData *plantData)
+void displayPlantData(int fd, PlantData *plantData, int menu)
 {
-    plantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN);
-    plantData->dht_data = readDHT(DHTPIN);
-    plantData->light_level = senseLightLevel(MCP3004_BASE, 1);
-
-    printf("Dirt Moisture:\t%.1f%%\n", plantData->ground_moisture); // im just gonna pull some numbers out my ass and say above 70% is the optimal watering level
-    lcdLoc(fd, LINE1);
-    typeln(fd, "Water: ");
-    typeFloat(fd, plantData->ground_moisture);
-    typeln(fd, "%");
-
-    printDHTData(plantData->dht_data);
-    if (plantData->dht_data != NULL)
+    switch (menu)
     {
-        lcdLoc(fd, LINE2);
-        typeln(fd, "HMT: ");
-        typeInt(fd, plantData->dht_data[0]);
-        typeln(fd, ".");
-        typeInt(fd, plantData->dht_data[1]);
-        typeln(fd, "%");
+        case 0: //Soil and Temperature
+            lcdLoc(fd, LINE1);
+            typeln(fd, "Soil: ");
+            typeFloat(fd, plantData->ground_moisture);
+            typeln(fd, "%");
+            if (plantData->dht_data != NULL)
+            {
+                lcdLoc(fd, LINE2);
+                typeln(fd, "TMP: ");
+                typeInt(fd, plantData->dht_data[2]);
+                typeln(fd, ".");
+                typeInt(fd, plantData->dht_data[3]);
+                typeln(fd, "%");
+            }
+            break;
+        case 1: //Temperature and Humidity
+            if (plantData->dht_data != NULL)
+            {
+                lcdLoc(fd, LINE1);
+                typeln(fd, "TMP: ");
+                typeInt(fd, plantData->dht_data[2]);
+                typeln(fd, ".");
+                typeInt(fd, plantData->dht_data[3]);
+                typeln(fd, "%");
+
+                lcdLoc(fd, LINE2);
+                typeln(fd, "HMT: ");
+                typeInt(fd, plantData->dht_data[0]);
+                typeln(fd, ".");
+                typeInt(fd, plantData->dht_data[1]);
+                typeln(fd, "%");
+            }
+            break;
+        case 2: //Humidity and light
+            if (plantData->dht_data != NULL)
+            {
+                lcdLoc(fd, LINE1);
+                typeln(fd, "HMT: ");
+                typeInt(fd, plantData->dht_data[0]);
+                typeln(fd, ".");
+                typeInt(fd, plantData->dht_data[1]);
+                typeln(fd, "%");
+            }
+            lcdLoc(fd, LINE2);
+            typeln(fd, "Light: ");
+            typeFloat(fd, plantData->light_level);
+            typeln(fd, "%");
+            break;
+        default:
+            printf("Uh Oh\n");
+            break;
     }
 
+    printDHTData(plantData->dht_data);
+    printf("Dirt Moisture:\t%.1f%%\n", plantData->ground_moisture); // im just gonna pull some numbers out my ass and say above 70% is the optimal watering level
     printf("Light:\t\t%.1f%%\n", plantData->light_level);
-
+    printf("Menu: %d\n", menu);
     printf("------------------------\n");
 }
 
@@ -88,7 +124,10 @@ int main()
 {
     wiringPiSetup();
     mcp3004Setup(MCP3004_BASE, SPI_CHAN);
+
     int fd = wiringPiI2CSetup(I2C_ADDR);
+    int flag = 0;
+    int menu = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
     lcd_init(fd);
 
@@ -105,11 +144,29 @@ int main()
     {
         if (millis() % 2000 == 0)
         {
-            printPlantData(fd, myPlantData);
+            myPlantData->ground_moisture = senseGroundMoisture(MCP3004_BASE, AD_CHAN);
+            myPlantData->dht_data = readDHT(DHTPIN);
+            myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
+
+            displayPlantData(fd, myPlantData, menu);
         }
         if (digitalRead(BUTTON_PIN) == HIGH)
         {
-            printf("pressed!\n");
+            if (!flag)
+            {
+                menu++;
+                if(menu > 2){
+                    menu = 0;
+                }
+                ClrLcd(fd);
+                displayPlantData(fd, myPlantData, menu);
+                flag = 1;
+                delay(200);
+            }
+        }
+        else
+        {
+            flag = 0;
         }
     }
     return 0;
