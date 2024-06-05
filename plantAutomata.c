@@ -7,10 +7,11 @@
 #include "../DHT11/DHT11.h"
 #include "../i2c_lcd/i2c_lcd.h"
 #include <time.h>
+#include <jansson.h>
 
-#define MCP3004_BASE 100 // virtuelle channel-vergabe für den AD-Wandler fängt bei 100 an zu zählen
-#define SPI_CHAN 0       // SPICE0: chip select gpio port
-#define AD_CHAN 0        // chan-0 on AD
+#define MCP3004_BASE 100
+#define SPI_CHAN 0 // SPICE0: chip select gpio port
+#define AD_CHAN 0  // chan-0 on AD
 
 #define DHTPIN 29
 #define BUTTON_PIN 28
@@ -18,17 +19,18 @@
 
 // Define some device parameters
 #define I2C_ADDR 0x27 // I2C device address
-#define LINE1 0x80 // 1st line
-#define LINE2 0xC0 // 2nd line
+#define LINE1 0x80    // 1st line
+#define LINE2 0xC0    // 2nd line
 
 #define POWER_SAVE_TIME 10 // 10x2=20 seconds to power save mode
-#define WATER_COOLDOWN 10 // 1 in x times to water
+#define WATER_COOLDOWN 10  // 1 in x times to water
 
 typedef struct PlantData
 {
     int *dht_data;
     float soil_moisture;
     float light_level;
+    float pump_threshhold;
 
 } PlantData;
 
@@ -45,6 +47,13 @@ float senseSoilMoisture(int mcp_base, int ad_channel)
     float moisture = (1 - value / 1023) * 100;
 
     return moisture;
+}
+
+float sensePumpThreshhold(int mcp_base, int ad_channel)
+{
+    float value = analogRead(mcp_base + ad_channel);
+    float thresh = value / 1023 * 100;
+    return thresh;
 }
 
 void printDHTData(int *dht_data)
@@ -111,10 +120,22 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
         typeFloat(fd, plantData->light_level);
         typeln(fd, "%");
         break;
-    case 3: // light and soil (full circle)
+    case 3: // light and pump threshhold
         lcdLoc(fd, LINE1);
         typeln(fd, "Light: ");
         typeFloat(fd, plantData->light_level);
+        typeln(fd, "%");
+
+        lcdLoc(fd, LINE2);
+        typeln(fd, "Pump: ");
+        typeFloat(fd, plantData->pump_threshhold);
+        typeln(fd, "%");
+        break;
+
+    case 4: // pump threshhold and soil
+        lcdLoc(fd, LINE1);
+        typeln(fd, "Pump: ");
+        typeFloat(fd, plantData->pump_threshhold);
         typeln(fd, "%");
 
         lcdLoc(fd, LINE2);
@@ -123,19 +144,13 @@ void displayPlantData(int fd, PlantData *plantData, int menu)
         typeln(fd, "%");
         break;
     }
-
-    
-    printf("Dirt Moisture:\t%.1f%%\n", plantData->soil_moisture); // im just gonna pull some numbers out my ass and say above 50% is the optimal watering level
-    printDHTData(plantData->dht_data);
-    printf("Light:\t\t%.1f%%\n", plantData->light_level);
-    printf("Menu: %d\n", menu);
-    printf("------------------------\n");
 }
 
-void water(){
+void water()
+{
     pinMode(PUMP_PIN, OUTPUT);
     digitalWrite(PUMP_PIN, HIGH);
-    delay(1000);
+    delay(2000);
     digitalWrite(PUMP_PIN, LOW);
     pinMode(PUMP_PIN, INPUT);
 }
@@ -148,16 +163,20 @@ int main()
     int powerSaveFlag = 0;
     int waterCounter = 0;
     PlantData *myPlantData = malloc(sizeof(PlantData));
-    FILE *dataFile = fopen("plantData.txt", "a");
-    if(dataFile == NULL){
-        printf("Error opening file\n");
-    }
+    // FILE *dataFile = fopen("plantData.json", "a");
+    // if (dataFile == NULL)
+    // {
+    //     printf("Error opening file\n");
+    // }
+    json_t *array = json_array();
 
     wiringPiSetup();
     mcp3004Setup(MCP3004_BASE, SPI_CHAN);
     lcd_init(fd);
 
     pinMode(BUTTON_PIN, INPUT);
+
+    // printf("printing...");
 
     lcdLoc(fd, LINE1);
     typeln(fd, "Plant Automota");
@@ -166,14 +185,17 @@ int main()
 
     delay(1500);
     ClrLcd(fd);
+
     while (1)
     {
-
         if (millis() % 2000 == 0)
         {
+            // printf("hello");
             myPlantData->soil_moisture = senseSoilMoisture(MCP3004_BASE, AD_CHAN); // get da data
+            // printf("world");
             myPlantData->dht_data = readDHT(DHTPIN);
             myPlantData->light_level = senseLightLevel(MCP3004_BASE, 1);
+            myPlantData->pump_threshhold = sensePumpThreshhold(MCP3004_BASE, 2);
 
             if (powerSaveTimer <= POWER_SAVE_TIME) // no need to display the data if its in power-save mode
             {
@@ -194,20 +216,48 @@ int main()
 
             if (myPlantData->dht_data != NULL)
             {
-                fprintf(dataFile, "%s %d.%d %f %f %d.%d \n", buffer, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->soil_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1]);
-                fflush(dataFile);
+                // fprintf(dataFile, "\n{\n\"date\": \"%s\",\n\"time\": \"%s\",\n\"temp\": \"%d.%d\",\n\"light\": \"%f\",\n\"moisture\": \"%f\",\n\"humidity\": \"%d.%d\"\n},",
+                //         buffer, buffer + 11, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->soil_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1]);
+                // // fprintf(dataFile, "%s %d.%d %f %f %d.%d %f\n", buffer, myPlantData->dht_data[2], myPlantData->dht_data[3], myPlantData->light_level, myPlantData->soil_moisture, myPlantData->dht_data[0], myPlantData->dht_data[1], myPlantData->pump_threshhold);
+                // fflush(dataFile);
+
+                json_t *new_data = json_object();
+                json_object_set_new(new_data, "date", json_string(buffer));
+                json_object_set_new(new_data, "time", json_string(buffer+11));
+                json_object_set_new(new_data, "temp", json_real(myPlantData->dht_data[0]));
+                json_object_set_new(new_data, "light", json_real(myPlantData->light_level));
+                json_object_set_new(new_data, "moisture", json_real(myPlantData->soil_moisture));
+                json_object_set_new(new_data, "humidity", json_real(myPlantData->dht_data[0]));
+
+                json_array_append_new(array, new_data);
+
+                json_dump_file(array, "./plantData.json", 0);
+
+                
             }
 
-            if (myPlantData->soil_moisture < 50.00){
-                if(waterCounter == 9){
+            if (myPlantData->soil_moisture < 50.00)
+            {
+                if (waterCounter == 9)
+                {
                     ClrLcd(fd);
                     lcdLoc(fd, LINE1);
                     typeln(fd, "Watering...");
                     water();
                 }
-                waterCounter = (waterCounter + 1) % WATER_COOLDOWN;
+                waterCounter = (waterCounter + 1) % WATER_COOLDOWN; // loop from 0-9
             }
-            printf("%d\n", waterCounter);
+            else
+            {
+                waterCounter = 0;
+            }
+            printf("Soil Moisture:\t%.1f%%\n", myPlantData->soil_moisture);
+            printDHTData(myPlantData->dht_data);
+            printf("Light:\t\t%.1f%%\n", myPlantData->light_level);
+            printf("Pump:\t\t%.1f%%\n", myPlantData->pump_threshhold);
+            printf("Menu: %d\n", menu);
+            printf("Water in %d\n", 10 - waterCounter);
+            printf("------------------------\n");
         }
 
         if (digitalRead(BUTTON_PIN) == HIGH) // if button pushed
@@ -219,7 +269,7 @@ int main()
             }
             else
             {                          // otherwise switch through menus
-                menu = (menu + 1) % 4; // loop from 0-3
+                menu = (menu + 1) % 5; // loop from 0-4
             }
 
             ClrLcd(fd);                              // clear lcd for next set of data
