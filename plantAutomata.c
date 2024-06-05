@@ -224,14 +224,14 @@ int main()
                 json_t *new_data = json_object();
                 json_object_set_new(new_data, "date", json_string(buffer));
                 json_object_set_new(new_data, "time", json_string(buffer+11));
-                json_object_set_new(new_data, "temp", json_real(myPlantData->dht_data[0]));
+                json_object_set_new(new_data, "temp", json_real(myPlantData->dht_data[2] + ((float)myPlantData->dht_data[3] / 10)));
                 json_object_set_new(new_data, "light", json_real(myPlantData->light_level));
                 json_object_set_new(new_data, "moisture", json_real(myPlantData->soil_moisture));
-                json_object_set_new(new_data, "humidity", json_real(myPlantData->dht_data[0]));
+                json_object_set_new(new_data, "humidity", json_real(myPlantData->dht_data[0] + ((float)myPlantData->dht_data[1] / 10)));
 
                 json_array_append_new(array, new_data);
 
-                json_dump_file(array, "./plantData.json", 0);
+                json_dump_file(array, "/home/its/IoT/plantWebsite/Plant-Automata-Website/dist/assets/plantData.json", 0);
 
                 
             }
